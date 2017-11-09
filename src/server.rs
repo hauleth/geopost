@@ -6,7 +6,7 @@ use hyper;
 use hyper::StatusCode;
 use hyper::header::ContentLength;
 use hyper::server::{Request, Response, Service};
-use slog;
+use slog::Logger;
 
 use zip_codes::ZipCodes;
 
@@ -22,11 +22,11 @@ macro_rules! some_404 {
 #[derive(Clone, Debug)]
 pub struct Server {
     data: HashMap<String, ZipCodes>,
-    logger: slog::Logger,
+    logger: Logger,
 }
 
 impl Server {
-    pub fn new(logger: slog::Logger) -> Self {
+    pub fn new(logger: Logger) -> Self {
         Server {
             logger: logger,
             data: HashMap::new(),

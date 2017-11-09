@@ -3,14 +3,18 @@ extern crate clap;
 extern crate hyper;
 #[macro_use]
 extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
+extern crate sloggers;
+extern crate futures;
 
 use std::fs::File;
 use std::net::SocketAddr;
+use std::thread;
 
 use clap::{App, Arg};
-use slog::Drain;
+use futures::sync::oneshot;
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
 
 const COUNTRY_CSV_HELP: &str = r#"
 Path to CSV describing zip codes for given country.
@@ -62,10 +66,11 @@ fn main() {
         )
         .get_matches();
 
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::CompactFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    let logger = slog::Logger::root(drain, o!());
+    let logger = TerminalLoggerBuilder::new()
+        .level(Severity::Debug)
+        .destination(Destination::Stdout)
+        .build()
+        .unwrap();
 
     let addr: SocketAddr = matches
         .value_of("listen")
@@ -73,12 +78,14 @@ fn main() {
         .parse()
         .expect("Invalid listen specification");
 
-    let mut handler = geopost::Server::new(logger.new(o!("server" => "true")));
+    let mut handler = geopost::Server::new(logger.new(o!("type" => "server")));
     load_countries(
         &mut handler,
         matches.values_of("country-csv").unwrap(),
         &logger,
     );
+
+    let (tx, rx) = oneshot::channel();
 
     info!(
         logger,
@@ -87,5 +94,9 @@ fn main() {
             "ip" => format!("{}", addr.ip()),
             "port" => addr.port(),
     );
-    geopost::start(handler, addr);
+    let child = thread::spawn(move || geopost::start(handler, addr, rx).unwrap());
+
+    geopost::trap(tx, logger.new(o!("type" => "trap")));
+
+    child.join().unwrap();
 }

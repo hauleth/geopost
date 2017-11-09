@@ -1,0 +1,69 @@
+image: clux/muslrust
+
+stages:
+  - deps
+  - build
+  - test
+  - release
+  - docker
+
+cache:
+  paths:
+    - /root/.cargo
+  untracked: true
+
+before_script:
+  - rustc --version
+  - cargo --version
+
+cargo:deps:
+  stage: deps
+  script:
+    - cargo fetch
+  tags:
+    - docker
+
+cargo:build:
+  stage: build
+  script:
+    - cargo build
+  tags:
+    - docker
+
+cargo:release:
+  stage: release
+  before_script:
+    - rustc --version
+    - cargo --version
+  script:
+    - cargo build --release
+    - cp target/x86_64-unknown-linux-musl/release/geopost .
+  tags:
+    - docker
+  artifacts:
+    paths:
+      - geopost
+  only:
+    - tags
+
+docker:
+  image: docker:latest
+  stage: docker
+  variables:
+    DOCKER_DRIVER: overlay2
+    REGISTRY_NAME: registry.appunite.com
+    IMAGE_NAME: $REGISTRY_NAME/hauleth/geopost
+    VERSION: $CI_COMMIT_TAG
+  before_script:
+    - docker version
+    - echo "BUILDING $VERSION"
+  script:
+    - docker build -t "$IMAGE_NAME:$VERSION" .
+    - docker login -u admin -p $DOCKER_PASS $REGISTRY_NAME
+    - docker push "$IMAGE_NAME"
+  dependencies:
+    - 'cargo:release'
+  tags:
+    - priviliged
+  only:
+    - tags
